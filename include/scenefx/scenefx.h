@@ -44,4 +44,11 @@ struct wlr_renderer *fx_renderer_get_wlr_renderer(struct fx_renderer *fx_rendere
 struct fx_renderer *scenefx_find_fx_renderer(struct wlr_scene *scene,
 		struct wlr_renderer *wlr_renderer);
 
+/**
+ * Set the luminance SDR white is mapped to on PQ (HDR) outputs, in nits.
+ * BT.2408 default is 203. Takes effect on the next rendered frame, so it
+ * can be re-applied at runtime (e.g. from a config reload).
+ */
+void scenefx_set_sdr_reference_luminance(float nits);
+
 #endif

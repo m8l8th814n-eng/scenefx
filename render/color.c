@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <wlr/render/color.h>
+#include <scenefx/scenefx.h>
 #include "render/color.h"
 #include "util/matrix.h"
 
@@ -405,6 +406,15 @@ void wlr_color_primaries_transform_absolute_colorimetric(
 	wlr_matrix_multiply(matrix, xyz_to_destination, source_to_xyz);
 }
 
+// SDR white level used when mapping SDR content into a PQ output, in nits.
+// BT.2408 says 203; compositors can override it via
+// scenefx_set_sdr_reference_luminance() and re-apply it at runtime.
+static float pq_reference_luminance = 203;
+
+void scenefx_set_sdr_reference_luminance(float nits) {
+	pq_reference_luminance = nits > 0 ? nits : 203;
+}
+
 void wlr_color_transfer_function_get_default_luminance(enum wlr_color_transfer_function tf,
 		struct wlr_color_luminances *lum) {
 	switch (tf) {
@@ -412,7 +422,7 @@ void wlr_color_transfer_function_get_default_luminance(enum wlr_color_transfer_f
 		*lum = (struct wlr_color_luminances){
 			.min = 0.005,
 			.max = 10000,
-			.reference = 203,
+			.reference = pq_reference_luminance,
 		};
 		break;
 	case WLR_COLOR_TRANSFER_FUNCTION_BT1886:
