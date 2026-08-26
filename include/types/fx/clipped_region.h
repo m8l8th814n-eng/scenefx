@@ -1,5 +1,6 @@
 #ifndef TYPES_FX_CLIPPED_REGION_H
 #define TYPES_FX_CLIPPED_REGION_H
+#include <pixman.h>
 #include <wlr/util/box.h>
 #include <scenefx/types/fx/clipped_region.h>
 
@@ -23,5 +24,13 @@ struct clipped_fregion {
 static __always_inline bool clipped_fregion_is_valid(const struct clipped_fregion *fregion) {
 	return !fx_corner_fradii_is_empty(&fregion->corners) && !wlr_box_empty(&fregion->area);
 };
+
+/**
+ * Rasterizes the rounded rect described by `fregion` into `region`, one span
+ * per row across the corner bands. Intended for the render paths that have no
+ * shader to do the rounding for them.
+ */
+void clipped_fregion_to_region(const struct clipped_fregion *fregion,
+		pixman_region32_t *region);
 
 #endif

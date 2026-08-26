@@ -305,8 +305,55 @@ static void vk_render_pass_destroy(struct fx_render_pass *fx_pass) {
 
 static void vk_render_pass_add_texture(struct fx_render_pass *fx_pass,
 		const struct fx_render_texture_options *fx_options) {
-	// TODO: Fallback to the regular wlr render path
-	wlr_render_pass_add_texture(fx_pass->render_pass, &fx_options->base);
+	// TODO: Render the texture effects in the shader. Until then the rounded
+	// outline is rasterized into the clip region so that at least the corners
+	// are cut, at the cost of not being antialiased.
+	const struct wlr_render_texture_options *options = &fx_options->base;
+	bool should_round = !fx_corner_fradii_is_empty(&fx_options->corners);
+	bool should_clip = !wlr_box_empty(&fx_options->clipped_region.area);
+	if (!should_round && !should_clip) {
+		wlr_render_pass_add_texture(fx_pass->render_pass, options);
+		return;
+	}
+
+	struct wlr_box dst_box;
+	wlr_render_texture_options_get_dst_box(options, &dst_box);
+
+	pixman_region32_t clip;
+	if (options->clip) {
+		pixman_region32_init(&clip);
+		pixman_region32_copy(&clip, options->clip);
+	} else {
+		pixman_region32_init_rect(&clip, dst_box.x, dst_box.y, dst_box.width, dst_box.height);
+	}
+
+	if (should_round) {
+		// The corners follow the CSD clip box when there is one, matching the
+		// box the GLES2 shader rounds against.
+		struct wlr_box corner_box = dst_box;
+		if (!wlr_box_empty(fx_options->clip_box)) {
+			corner_box = *fx_options->clip_box;
+		}
+		pixman_region32_t outline;
+		clipped_fregion_to_region(&(struct clipped_fregion){
+			.area = corner_box,
+			.corners = fx_options->corners,
+		}, &outline);
+		pixman_region32_intersect(&clip, &clip, &outline);
+		pixman_region32_fini(&outline);
+	}
+
+	if (should_clip) {
+		pixman_region32_t hole;
+		clipped_fregion_to_region(&fx_options->clipped_region, &hole);
+		pixman_region32_subtract(&clip, &clip, &hole);
+		pixman_region32_fini(&hole);
+	}
+
+	struct wlr_render_texture_options clipped_options = *options;
+	clipped_options.clip = &clip;
+	wlr_render_pass_add_texture(fx_pass->render_pass, &clipped_options);
+	pixman_region32_fini(&clip);
 }
 
 static void vk_render_pass_add_rect(struct fx_render_pass *fx_pass,

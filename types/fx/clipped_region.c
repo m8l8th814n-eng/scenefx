@@ -1,3 +1,6 @@
+#include <math.h>
+#include <stdlib.h>
+
 #include "scenefx/types/fx/clipped_region.h"
 #include "types/fx/clipped_region.h"
 
@@ -61,6 +64,61 @@ bool fx_corner_fradii_is_empty(const struct fx_corner_fradii* corners) {
 		&& corners->top_right == 0.0
 		&& corners->bottom_right == 0.0
 		&& corners->bottom_left == 0.0;
+}
+
+static int arc_inset(float radius, int row) {
+	if (row >= (int)radius) {
+		return 0;
+	}
+	float dy = radius - row - 0.5f;
+	return lroundf(radius - sqrtf(radius * radius - dy * dy));
+}
+
+void clipped_fregion_to_region(const struct clipped_fregion *fregion,
+		pixman_region32_t *region) {
+	const struct wlr_box *area = &fregion->area;
+	if (wlr_box_empty(area)) {
+		pixman_region32_init(region);
+		return;
+	}
+
+	float max_radius = fminf(area->width, area->height) / 2.0f;
+	float top_left = fminf(fregion->corners.top_left, max_radius);
+	float top_right = fminf(fregion->corners.top_right, max_radius);
+	float bottom_right = fminf(fregion->corners.bottom_right, max_radius);
+	float bottom_left = fminf(fregion->corners.bottom_left, max_radius);
+
+	int top = fmaxf(top_left, top_right);
+	int bottom = fmaxf(bottom_left, bottom_right);
+	pixman_box32_t *boxes = malloc((top + bottom + 1) * sizeof(*boxes));
+	if (boxes == NULL) {
+		pixman_region32_init_rect(region, area->x, area->y, area->width, area->height);
+		return;
+	}
+
+	int len = 0;
+	for (int row = 0; row < top; row++) {
+		int x1 = area->x + arc_inset(top_left, row);
+		int x2 = area->x + area->width - arc_inset(top_right, row);
+		if (x2 > x1) {
+			boxes[len++] = (pixman_box32_t){ x1, area->y + row, x2, area->y + row + 1 };
+		}
+	}
+	if (area->height > top + bottom) {
+		boxes[len++] = (pixman_box32_t){ area->x, area->y + top,
+			area->x + area->width, area->y + area->height - bottom };
+	}
+	for (int row = 0; row < bottom; row++) {
+		int y = area->y + area->height - 1 - row;
+		int x1 = area->x + arc_inset(bottom_left, row);
+		int x2 = area->x + area->width - arc_inset(bottom_right, row);
+		if (x2 > x1) {
+			boxes[len++] = (pixman_box32_t){ x1, y, x2, y + 1 };
+		}
+	}
+
+	pixman_region32_init_rects(region, boxes, len);
+	free(boxes);
 }
 
 struct clipped_region clipped_region_get_default(void) {
