@@ -1,4 +1,5 @@
 #version 450
+#extension GL_ARB_shading_language_include : require
 
 // Brightness/contrast/saturation/noise applied after the blur chain.
 // Port of the GLES2 blur_effects.frag.
@@ -13,7 +14,11 @@ layout(push_constant) uniform UBO {
 	float contrast;
 	float saturation;
 	float noise;
+	layout(offset = 96) vec4 corner_rect;
+	vec4 corner_radii;
 } data;
+
+#include "corner_alpha.glsl"
 
 mat4 brightness_matrix() {
 	float b = data.brightness - 1.0;
@@ -58,4 +63,17 @@ void main() {
 	color = brightness_matrix() * contrast_matrix() * saturation_matrix() * color;
 	color.xyz += noise_amount(uv);
 	out_color = color;
+
+	// Match the rounding of the window the blur sits behind. Without this the
+	// blur is composited as a square and juts out past the texture's rounded
+	// corners, which reads as a soft halo around each corner.
+	out_color *= corner_alpha(
+		data.corner_rect.zw - 1.0,
+		data.corner_rect.xy + 0.5,
+		false,
+		data.corner_radii.x,
+		data.corner_radii.y,
+		data.corner_radii.z,
+		data.corner_radii.w
+	);
 }

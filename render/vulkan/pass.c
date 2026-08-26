@@ -724,6 +724,25 @@ static void vk_render_pass_add_blur(struct fx_render_pass *fx_pass,
 		.saturation = blur_data.saturation,
 		.noise = blur_data.noise,
 	};
+	// Round the composite to the same box the window texture is rounded to,
+	// otherwise the blur is a square behind a rounded window and its corners
+	// show as a halo.
+	const struct fx_corner_fradii *blur_corners = &fx_options->tex_options.corners;
+	if (!fx_corner_fradii_is_empty(blur_corners)) {
+		struct wlr_box corner_box = fx_options->tex_options.base.dst_box;
+		if (fx_options->tex_options.clip_box != NULL
+				&& !wlr_box_empty(fx_options->tex_options.clip_box)) {
+			corner_box = *fx_options->tex_options.clip_box;
+		}
+		effects_pcr_data.corner_rect[0] = corner_box.x;
+		effects_pcr_data.corner_rect[1] = corner_box.y;
+		effects_pcr_data.corner_rect[2] = corner_box.width;
+		effects_pcr_data.corner_rect[3] = corner_box.height;
+		effects_pcr_data.corner_radii[0] = blur_corners->top_left;
+		effects_pcr_data.corner_radii[1] = blur_corners->top_right;
+		effects_pcr_data.corner_radii[2] = blur_corners->bottom_left;
+		effects_pcr_data.corner_radii[3] = blur_corners->bottom_right;
+	}
 
 	VkPipelineLayout layout = renderer->shader_info.blur_effects.pipeline_layout;
 	VkDescriptorSet result_ds = renderer->effect_images[result_index].ds;

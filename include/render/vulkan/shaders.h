@@ -82,6 +82,11 @@ struct vk_frag_blur_effects_pcr_data {
 	float contrast;
 	float saturation;
 	float noise;
+	// Both vec4s must land on 16-byte boundaries. The fragment range starts at
+	// offset 80, so these sit at 96 and 112 -- still inside the 128 bytes
+	// Vulkan guarantees.
+	float corner_rect[4]; // x, y, width, height in output pixels
+	float corner_radii[4]; // top-left, top-right, bottom-left, bottom-right
 };
 
 struct vk_pipeline_blur {
