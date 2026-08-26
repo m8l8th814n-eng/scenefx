@@ -59,12 +59,27 @@ struct vk_pipeline_quad {
 };
 
 bool create_vk_quad_pipelines(struct vk_renderer *renderer, struct vk_render_setup *setup,
-		struct vk_pipeline_quad **out_quad);
+		struct vk_shader_info *shader, struct vk_pipeline_quad **out_quad);
 void delete_vk_quad_pipelines(struct vk_renderer *renderer, struct vk_pipeline_quad *quad);
 struct vk_pipeline *get_vk_quad_pipeline(struct vk_pipeline_quad *quad,
 		enum fx_quad_shader_effects effects);
 
 bool vk_shader_info_create_quad(struct vk_renderer *renderer);
+
+///
+/// Box shadow
+///
+
+struct vk_frag_box_shadow_pcr_data {
+	float color[4];
+	float size[2];
+	float position[2];
+	float blur_sigma;
+	float corner_radius;
+	struct vk_shader_rounding_data clipping;
+};
+
+bool vk_shader_info_create_box_shadow(struct vk_renderer *renderer);
 
 ///
 /// Blur

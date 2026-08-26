@@ -12,6 +12,7 @@
 // shaders
 #include "common.vert.h"
 #include "quad.frag.h"
+#include "box_shadow.frag.h"
 #include "blur1.frag.h"
 #include "blur2.frag.h"
 #include "blur_effects.frag.h"
@@ -39,9 +40,9 @@ VkResult create_vk_vert_module(struct vk_renderer *renderer) {
 ///
 
 static bool create_pipeline_quad(struct vk_renderer *renderer, struct vk_render_setup *setup,
-		struct vk_pipeline *variant, const enum fx_quad_shader_effects _effects) {
+		struct vk_shader_info *quad, struct vk_pipeline *variant,
+		const enum fx_quad_shader_effects _effects) {
 	const uint32_t effects = _effects;
-	struct vk_shader_info *quad = &renderer->shader_info.quad;
 
 	VkResult res;
 
@@ -164,7 +165,7 @@ static bool create_pipeline_quad(struct vk_renderer *renderer, struct vk_render_
 }
 
 bool create_vk_quad_pipelines(struct vk_renderer *renderer, struct vk_render_setup *setup,
-		struct vk_pipeline_quad **out_quad) {
+		struct vk_shader_info *shader, struct vk_pipeline_quad **out_quad) {
 	*out_quad = NULL;
 	struct vk_pipeline_quad *quad = calloc(1, sizeof(*quad));
 
@@ -174,7 +175,7 @@ bool create_vk_quad_pipelines(struct vk_renderer *renderer, struct vk_render_set
 		struct vk_pipeline *variant = &quad->variants[effects];
 		variant->pipeline = VK_NULL_HANDLE;
 
-		if (!create_pipeline_quad(renderer, setup, variant, effects)) {
+		if (!create_pipeline_quad(renderer, setup, shader, variant, effects)) {
 			wlr_log(WLR_ERROR, "Could not create quad shader pipeline: Effects: \"%d\"",
 					effects);
 			goto failed;
@@ -246,6 +247,50 @@ bool vk_shader_info_create_quad(struct vk_renderer *renderer) {
 	res = vkCreatePipelineLayout(renderer->device, &pl_info, NULL, &quad->pipeline_layout);
 	if (res != VK_SUCCESS) {
 		vkDestroyShaderModule(renderer->device, quad->shader_module, NULL);
+		wlr_vk_error("vkCreatePipelineLayout", res);
+		return false;
+	}
+
+	return true;
+}
+
+bool vk_shader_info_create_box_shadow(struct vk_renderer *renderer) {
+	struct vk_shader_info *shadow = &renderer->shader_info.box_shadow;
+
+	VkShaderModuleCreateInfo shader_info = {
+		.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
+		.codeSize = sizeof(box_shadow_frag_data),
+		.pCode = box_shadow_frag_data,
+	};
+	VkResult res = vkCreateShaderModule(renderer->device, &shader_info, NULL,
+			&shadow->shader_module);
+	if (res != VK_SUCCESS) {
+		wlr_vk_error("Failed to create box shadow fragment shader module", res);
+		return false;
+	}
+
+	VkPushConstantRange pc_ranges[] = {
+		{
+			.size = sizeof(struct vk_vert_pcr_data),
+			.stageFlags = VK_SHADER_STAGE_VERTEX_BIT,
+		},
+		{
+			.offset = pc_ranges[0].size,
+			.size = sizeof(struct vk_frag_box_shadow_pcr_data),
+			.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT,
+		},
+	};
+
+	VkPipelineLayoutCreateInfo pl_info = {
+		.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO,
+		.setLayoutCount = 0,
+		.pushConstantRangeCount = sizeof(pc_ranges) / sizeof(pc_ranges[0]),
+		.pPushConstantRanges = pc_ranges,
+	};
+
+	res = vkCreatePipelineLayout(renderer->device, &pl_info, NULL, &shadow->pipeline_layout);
+	if (res != VK_SUCCESS) {
+		vkDestroyShaderModule(renderer->device, shadow->shader_module, NULL);
 		wlr_vk_error("vkCreatePipelineLayout", res);
 		return false;
 	}

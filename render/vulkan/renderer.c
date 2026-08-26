@@ -15,6 +15,7 @@
 
 static inline void free_shaders(struct vk_renderer *vk_renderer) {
 	vk_shader_info_delete(vk_renderer, &vk_renderer->shader_info.quad);
+	vk_shader_info_delete(vk_renderer, &vk_renderer->shader_info.box_shadow);
 
 	vk_shader_info_delete(vk_renderer, &vk_renderer->shader_info.blur1);
 	vk_shader_info_delete(vk_renderer, &vk_renderer->shader_info.blur2);
@@ -50,6 +51,12 @@ static bool link_shaders(struct vk_renderer *renderer) {
 
 	if (!vk_shader_info_create_quad(renderer)) {
 		wlr_log(WLR_ERROR, "Could not link quad shaders");
+		goto error;
+	}
+
+	// box shadow fragment shader
+	if (!vk_shader_info_create_box_shadow(renderer)) {
+		wlr_log(WLR_ERROR, "Could not link box shadow shader");
 		goto error;
 	}
 

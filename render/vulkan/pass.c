@@ -496,7 +496,107 @@ static void vk_render_pass_add_rounded_rect_grad(struct fx_render_pass *fx_pass,
 
 static void vk_render_pass_add_box_shadow(struct fx_render_pass *fx_pass,
 		const struct fx_render_box_shadow_options *options) {
-	// TODO:
+	struct vk_render_pass *pass = vk_get_render_pass(fx_pass);
+	struct vk_renderer *vk_renderer = pass->vk_renderer;
+	VkCommandBuffer cb = pass->command_buffer;
+
+	struct wlr_box box = options->box;
+	assert(box.width > 0 && box.height > 0);
+
+	// The shader premultiplies with the per-pixel shadow alpha, so hand it the
+	// straight linear color rather than the premultiplied one.
+	float linear_color[] = {
+		color_to_linear(options->color.r),
+		color_to_linear(options->color.g),
+		color_to_linear(options->color.b),
+		options->color.a,
+	};
+
+	pixman_region32_t clip_region;
+	if (options->clip) {
+		pixman_region32_init(&clip_region);
+		pixman_region32_copy(&clip_region, options->clip);
+	} else {
+		pixman_region32_init_rect(&clip_region, box.x, box.y, box.width, box.height);
+	}
+	const struct wlr_box *clipped_region_box = &options->clipped_region.area;
+	struct fx_corner_fradii clipped_region_corners = options->clipped_region.corners;
+	apply_clip_region(&clip_region, clipped_region_box, &clipped_region_corners);
+
+	int clip_rects_len;
+	const pixman_box32_t *clip_rects = pixman_region32_rectangles(&clip_region, &clip_rects_len);
+	for (int i = 0; i < clip_rects_len; i++) {
+		struct wlr_box clip_box = {
+			.x = clip_rects[i].x1,
+			.y = clip_rects[i].y1,
+			.width = clip_rects[i].x2 - clip_rects[i].x1,
+			.height = clip_rects[i].y2 - clip_rects[i].y1,
+		};
+		struct wlr_box intersection;
+		if (!wlr_box_intersection(&intersection, &box, &clip_box)) {
+			continue;
+		}
+		render_pass_mark_box_updated(pass, &intersection);
+	}
+
+	enum fx_quad_shader_effects effects = SHADER_QUAD_EFFECT_NONE;
+	if (clipped_fregion_is_valid(&options->clipped_region)) {
+		effects |= SHADER_QUAD_EFFECT_CLIPPING;
+	}
+
+	float proj[9], matrix[9];
+	wlr_matrix_identity(proj);
+	wlr_matrix_project_box(matrix, &box, WL_OUTPUT_TRANSFORM_NORMAL, proj);
+	wlr_matrix_multiply(matrix, pass->projection, matrix);
+
+	VkPipelineLayout layout = vk_renderer->shader_info.box_shadow.pipeline_layout;
+	struct vk_pipeline *pipeline =
+		get_vk_quad_pipeline(pass->render_setup->vk_pipelines.box_shadow, effects);
+	if (pipeline == NULL) {
+		pixman_region32_fini(&clip_region);
+		return;
+	}
+
+	struct vk_vert_pcr_data vert_pcr_data = {
+		.uv_off = { 0, 0 },
+		.uv_size = { 1, 1 },
+	};
+	encode_proj_matrix(matrix, vert_pcr_data.mat4);
+	struct vk_frag_box_shadow_pcr_data shadow_pcr_data = {
+		.color = {linear_color[0], linear_color[1], linear_color[2], linear_color[3]},
+		.size = {box.width, box.height},
+		.position = {box.x, box.y},
+		.blur_sigma = options->blur_sigma,
+		.corner_radius = options->corner_radius,
+		.clipping = {
+			.size = {clipped_region_box->width, clipped_region_box->height},
+			.position = {clipped_region_box->x, clipped_region_box->y},
+			.radius = {
+				.top_left = clipped_region_corners.top_left,
+				.top_right = clipped_region_corners.top_right,
+				.bottom_left = clipped_region_corners.bottom_left,
+				.bottom_right = clipped_region_corners.bottom_right,
+			}
+		},
+	};
+
+	bind_pipeline(pass, pipeline);
+	vkCmdPushConstants(cb, layout, VK_SHADER_STAGE_VERTEX_BIT,
+			0, sizeof(vert_pcr_data), &vert_pcr_data);
+	vkCmdPushConstants(cb, layout, VK_SHADER_STAGE_FRAGMENT_BIT,
+			sizeof(vert_pcr_data), sizeof(shadow_pcr_data), &shadow_pcr_data);
+
+	for (int i = 0; i < clip_rects_len; i++) {
+		VkRect2D rect;
+		convert_pixman_box_to_vk_rect(&clip_rects[i], &rect);
+		vkCmdSetScissor(cb, 0, 1, &rect);
+		vkCmdDraw(cb, 4, 1, 0, 0);
+	}
+
+	wlr_vk_render_pass_reset_pipeline(fx_pass->render_pass);
+	pass->bound_pipeline = VK_NULL_HANDLE;
+
+	pixman_region32_fini(&clip_region);
 }
 
 // TODO:

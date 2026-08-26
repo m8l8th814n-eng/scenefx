@@ -129,6 +129,7 @@ struct vk_renderer {
 		VkShaderModule vert;
 
 		struct vk_shader_info quad;
+		struct vk_shader_info box_shadow;
 
 		// Sampling path owned by scenefx. The blur passes sample our own
 		// offscreen images rather than wlr_textures, so we cannot reuse
