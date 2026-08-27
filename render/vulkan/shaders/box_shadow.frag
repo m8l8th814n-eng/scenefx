@@ -3,6 +3,11 @@
 
 // Writeup: https://madebyevan.com/shaders/fast-rounded-rectangle-shadows/
 
+// Falloff exponent applied to the gaussian mask, in the spirit of Hyprland's
+// shadow_render_power. 1.0 is the plain gaussian; higher keeps opacity near
+// the window and thins the tail out faster.
+#define SHADOW_FALLOFF_POWER 2.0
+
 layout(location = 0) out vec4 out_color;
 layout(push_constant) uniform UBO {
 	layout(offset = 80) vec4 color;
@@ -73,13 +78,16 @@ float rounded_box_shadow(vec2 lower, vec2 upper, vec2 point, float sigma, float 
 }
 
 void main() {
+	// The gaussian runs at blur_sigma * 0.5 and its tail reaches 3 sigma, so
+	// the node box is inset by 1.5 * blur_sigma to get the casting rect.
 	float alpha = data.color.a * rounded_box_shadow(
-		data.position + data.blur_sigma,
-		data.position + data.size - data.blur_sigma,
+		data.position + data.blur_sigma * 1.5,
+		data.position + data.size - data.blur_sigma * 1.5,
 		gl_FragCoord.xy,
 		data.blur_sigma * 0.5,
 		data.corner_radius
 	);
+	alpha = pow(alpha, SHADOW_FALLOFF_POWER);
 
 	// Clipping: punch the window's own rect out of the shadow
 	if ((EFFECTS & EFFECT_CLIPPING) == EFFECT_CLIPPING) {
